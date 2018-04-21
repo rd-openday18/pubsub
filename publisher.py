@@ -19,6 +19,7 @@ random.seed(42)
 try:
     GCLOUD_PROJECT_ID = environ['GCLOUD_PROJECT_ID']
     GCLOUD_TOPIC_NAME = environ['GCLOUD_TOPIC_NAME']
+    SIMULATOR_WAIT_SECONDS = float(environ['SIMULATOR_WAIT_SECONDS'])
 except KeyError as exc:
     logging.error(f'Please provide environment variable {exc.args[0]}')
     exit(1)
@@ -92,7 +93,7 @@ def loop(pub_client, topic, persist_store):
             # write to google pubsub
             future = pub_client.publish(topic, msg.encode())
             future.add_done_callback(callback)
-            time.sleep(0.5)
+            time.sleep(SIMULATOR_WAIT_SECONDS)
     except KeyboardInterrupt as exc:
         logging.info('Interrupted. Exiting...')
         if persist_store:
