@@ -3,14 +3,75 @@ import json
 import logging
 import fileinput
 import subprocess
+from os import environ
+
+from google.cloud import pubsub
+from google.api_core import exceptions
 
 IFACE = 'hci0'
 REPLACE_CONSTRUCTORS = set(['Static', 'Resolvable', 'Non-Resolvable'])
 
 logging.basicConfig(
-    stream=sys.stderr, level=logging.INFO,
+    stream=sys.stdout, level=logging.INFO,
     format='%(module)s|%(name)s|%(filename)s - %(levelname)s @ %(asctime)s : %(message)s'
 )
+
+# Get configuration
+try:
+    GCLOUD_PROJECT_ID = environ['GCLOUD_PROJECT_ID']
+    GCLOUD_TOPIC_NAME = environ['GCLOUD_TOPIC_NAME']
+except KeyError as exc:
+    logging.error('Please provide environment variable ' + exc.args[0])
+    sys.exit(1)
+try:
+    PERSIST_STORE = environ['PERSIST_STORE']
+except KeyError as exc:
+    logging.info('Will not persist locally')
+    PERSIST_STORE = None
+else:
+    logging.info('Writting data locally to ' + PERSIST_STORE)
+
+def get_or_create_topic(pub_client, gcloud_project_id, gcloud_topic_name):
+    '''
+    Create or get an existing topic from Google PubSub.
+
+    If the topic already exists we just get an handle to it. If the topic does
+    not already exist then it is created and an handle to it is returned.
+
+    If an error occurs during topic creation we exit the program.
+
+    Parameters
+    ----------
+    pub_client : google.cloud.pubsub.PublisherClient
+        Google Pubsub publisher client.
+    gcloud_project_id : str
+        Google Cloud project id.
+    gcloud_topic_name : str
+        Google PubSub topic name.
+
+    Returns
+    -------
+    str : project/topic in Google Cloud URI format
+    '''
+    topic = pub_client.topic_path(gcloud_project_id, gcloud_topic_name)
+    try:
+        response = pub_client.create_topic(topic)
+    except exceptions.AlreadyExists as exc:
+        logging.info('Topic %s already exists' % topic)
+    except Exception as exc:
+        logging.exception('Unable to create or get topic: %s' % topic)
+        sys.exit(1)
+    else:
+        logging.info('Created topic %s' % topic)
+    return topic
+
+def callback(future):
+    try:
+        message_id = future.result()
+    except Exception as exec:
+        logging.warning('Unable to publish message')
+    else:
+        logging.info('Published message: ' + message_id)
 
 def get_sniffer_addr(iface):
     '''
@@ -79,7 +140,7 @@ def parse_message(msg):
 
     return data
 
-def loop():
+def loop(pub_client, topic, persist_store):
     '''
     Main loop reading from stdin, parsing messages and sending them to PubSub.
     '''
@@ -93,8 +154,18 @@ def loop():
                 except Exception as exc:
                     logging.exception('Unable to parse message:\n%s' % msg)
                     continue
-                print(json.dumps(parsed_msg))
-                # TODO: publish to PubSub
+                try:
+                    serialized_msg = json.dumps(parsed_msg, separators=(',', ':'))
+                    # write to local persistent store
+                    if persist_store:
+                        persist_store.write(serialized_msg + '\n')
+                    # write to google pubsub
+                    future = pub_client.publish(topic, serialized_msg.encode())
+                    # TODO: add message attributes (event time, publish time)
+                    future.add_done_callback(callback)
+                except Exception as exc:
+                    logging.exception('Unable to publish message: %s' % serialized_msg)
+                    continue
             msg = line
             inside_msg = True
         elif inside_msg:
@@ -103,7 +174,15 @@ def loop():
 if __name__ == '__main__':
     logging.info('Starting sniffer ...')
     logging.info('Sniffing interface: %s (%s)' % (IFACE, sniffer_addr))
+
+    pub_client = pubsub.PublisherClient()
+    topic = get_or_create_topic(pub_client, GCLOUD_PROJECT_ID,
+        GCLOUD_TOPIC_NAME)
+    persist_store = open(PERSIST_STORE, 'a') if PERSIST_STORE else None
+
     try:
-        loop()
+        loop(pub_client, topic, persist_store)
     except KeyboardInterrupt:
         logging.info('Interrupted. Exiting ...')
+        if persist_store:
+            persist_store.close()
