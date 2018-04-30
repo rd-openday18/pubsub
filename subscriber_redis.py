@@ -90,7 +90,7 @@ def _upsert(key, value):
         redis.set(key, value)
     else:
         current_dict = json.loads(current)
-        if value_dict['time'] >= current_dict['time']:
+        if value_dict['datetime'] >= current_dict['datetime']:
             logging.info(f'Updated key {key}')
             redis.set(key, value)
         else:
@@ -100,8 +100,8 @@ def callback(message):
     logging.info(f'Processing message {message.message_id} ...')
     data = json.loads(message.data)
 
-    station_key = 'station_id:' + str(data['station_id'])
-    beacon_key = 'beacon_id:' + str(data["beacon_id"])
+    station_key = 'sniffer_addr:' + str(data['sniffer_addr'])
+    beacon_key = 'adv_addr:' + str(data['adv_addr'])
     station_beacon_key = ','.join([station_key, beacon_key])
 
     try:
