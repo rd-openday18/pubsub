@@ -65,13 +65,6 @@ def get_or_create_subscription(client, project_id, topic_name, sub_name):
     return subscription
 
 def make_redis(host, port, password):
-    # try:
-    #     sentinel = Sentinel([(sentinel_host, sentinel_port)], socket_timeout=1.0)
-    #     master = sentinel.master_for('mymaster', socket_timeout=1.0)
-    # except Exception as exc:
-    #     logging.exception('Unable to create redis client to master note')
-    #     exit(1)
-    # return master
     try:
         redis = StrictRedis(host, port, password=password)
         assert redis.ping()
