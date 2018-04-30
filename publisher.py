@@ -5,11 +5,14 @@ import fileinput
 import subprocess
 from os import environ
 
+from dateutil import parser
+from tzlocal import get_localzone
 from google.cloud import pubsub
 from google.api_core import exceptions
 
 IFACE = 'hci0'
 REPLACE_CONSTRUCTORS = set(['Static', 'Resolvable', 'Non-Resolvable'])
+TIMEZONE = get_localzone()
 
 logging.basicConfig(
     stream=sys.stdout, level=logging.INFO,
@@ -117,7 +120,8 @@ def parse_message(msg):
 
     data = dict()
     data['sniffer_addr'] = sniffer_addr
-    data['datetime'] = lines[0][-26:]
+    data['datetime'] = parser.parse(lines[0][-26:])
+    data['datetime'] = TIMEZONE.localize(data['datetime']).timestamp()
     for line in lines[2:]:
         if line.startswith('        Address:'):
             _, addr = line.split(':', 1)
