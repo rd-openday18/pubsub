@@ -68,7 +68,7 @@ def get_or_create_topic(pub_client, gcloud_project_id, gcloud_topic_name):
 def callback(future):
     try:
         message_id = future.result()
-    except Exception as exec:
+    except Exception as exc:
         logging.warning('Unable to publish message')
     else:
         logging.info('Published message: ' + message_id)
@@ -108,7 +108,7 @@ def parse_message(msg):
 
     Returns
     -------
-    dict
+    dict or None
     '''
     lines = msg.split('\n')
     type_ = lines[1].strip()
@@ -140,6 +140,37 @@ def parse_message(msg):
 
     return data
 
+def process_message(msg, pub_client, topic, persist_store):
+    # Parse message
+    try:
+        msg_parsed = parse_message(msg)
+    except Exception as exc:
+        logging.exception('Unable to parse message:\n%s' % msg)
+        return
+
+    # Serialize message to JSON
+    if msg_parsed is None:
+        return
+    msg_serialized = json.dumps(msg_parsed, separators=(',', ':'))
+
+    # Write message to local persistent store
+    try:
+        if persist_store:
+            persist_store.write(msg_serialized + '\n')
+            persist_store.flush()
+    except Exception as exc:
+        logging.exception('Unable to locally write message: %s' % msg_serialized)
+
+    # Write message to google pubsub
+    try:
+        future = pub_client.publish(topic, msg_serialized.encode())
+        # TODO: add message attributes (event time, publish time)
+        future.add_done_callback(callback)
+    except Exception as exc:
+        logging.exception('Unable to publish message: %s' % msg_serialized)
+
+    return
+
 def loop(pub_client, topic, persist_store):
     '''
     Main loop reading from stdin, parsing messages and sending them to PubSub.
@@ -149,23 +180,7 @@ def loop(pub_client, topic, persist_store):
     for line in fileinput.input():
         if line.startswith('>') or line.startswith('<'):
             if inside_msg:
-                try:
-                    parsed_msg = parse_message(msg)
-                except Exception as exc:
-                    logging.exception('Unable to parse message:\n%s' % msg)
-                    continue
-                try:
-                    serialized_msg = json.dumps(parsed_msg, separators=(',', ':'))
-                    # write to local persistent store
-                    if persist_store:
-                        persist_store.write(serialized_msg + '\n')
-                    # write to google pubsub
-                    future = pub_client.publish(topic, serialized_msg.encode())
-                    # TODO: add message attributes (event time, publish time)
-                    future.add_done_callback(callback)
-                except Exception as exc:
-                    logging.exception('Unable to publish message: %s' % serialized_msg)
-                    continue
+                process_message(msg, pub_client, topic, persist_store)
             msg = line
             inside_msg = True
         elif inside_msg:
