@@ -4,8 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-google-cloud-pubsub = "==0.33.1"
-redis = "==2.10.6"
+google-cloud-pubsub = "==0.34.0"
+redis = ">=2.10,<2.11"
 
 [dev-packages]
 ipython = "*"
