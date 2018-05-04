@@ -1,5 +1,6 @@
 from os import environ
 from sys import exit, stdout
+from hashlib import sha1
 import time
 import json
 import random
@@ -73,12 +74,24 @@ def callback(future):
     else:
         logging.info(f'Published message: {message_id}')
 
+def generate_mac_addr(k, type_):
+    h = sha1()
+    h.update(type_.encode())
+    h.update(str(k).encode())
+    digest = h.hexdigest()
+    addr = ':'.join([digest[2*i:2*(i+1)] for i in range(6)])
+    return addr
+
 def generate(n_stations, n_beacons):
+    adv_addr = generate_mac_addr(random.randrange(n_stations), 'adv')
+    adv_constructor = adv_addr.replace(':', '').upper()
+    sniffer_addr = generate_mac_addr(random.randrange(n_beacons), 'sniffer')
     msg = {
-        'station_id': random.randrange(n_stations),
-        'beacon_id': random.randrange(n_beacons),
-        'rssi': random.random(),
-        'time': time.time()
+        'adv_addr': adv_addr,
+        'adv_constructor': adv_constructor,
+        'sniffer_addr': sniffer_addr,
+        'rssi': random.randrange(-80, 80),
+        'datetime': time.time()
     }
     return msg
 
